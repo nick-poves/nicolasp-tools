@@ -1,21 +1,24 @@
-
- // ==UserScript==
- // @name         NicolasP Tools [J A N]
- // @namespace    NicolasPTools
- // @version      4.6.1
- // @description  Green Neon Edition for Bubble.am
- // @author       NicolasP [J A N]
- // @match        https://bubble.am/*
- // @match        https://buble.am/*
- // @grant        none
- // @run-at       document-start
- // ==/UserScript==
+// ==UserScript==
+// @name         NicolasP Tools [J A N]
+// @namespace    NicolasPTools
+// @version      4.6.2
+// @description  Green Neon Edition for Bubble.am
+// @author       NicolasP [J A N]
+// @homepageURL  https://github.com/nick-poves/nicolasp-tools
+// @supportURL   https://www.instagram.com/nick_poves/
+// @updateURL    https://raw.githubusercontent.com/nick-poves/nicolasp-tools/main/nicolasp-tools.user.js
+// @downloadURL  https://raw.githubusercontent.com/nick-poves/nicolasp-tools/main/nicolasp-tools.user.js
+// @match        https://bubble.am/*
+// @match        https://buble.am/*
+// @grant        none
+// @run-at       document-start
+// ==/UserScript==
 
 (() => {
   'use strict';
 
   const A = {
-    version: '4.6.1',
+    version: '4.6.2',
     author: 'NicolasP [J A N]',
     instagram: 'https://www.instagram.com/nick_poves/'
   };
