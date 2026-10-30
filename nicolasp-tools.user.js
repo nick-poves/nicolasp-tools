@@ -1,517 +1,361 @@
-// ==UserScript==
-// @name         NicolasP Tools [J A N]
-// @namespace    https://www.instagram.com/nick_poves/
-// @version      4.5.1
-// @description  Personalización, movimiento y controles para Bubble.am
-// @author       NicolasP [J A N]
-// @homepageURL  https://github.com/nick-poves/nicolasp-tools
-// @supportURL   https://www.instagram.com/nick_poves/
-// @updateURL    https://raw.githubusercontent.com/nick-poves/nicolasp-tools/main/nicolasp-tools.user.js
-// @downloadURL  https://raw.githubusercontent.com/nick-poves/nicolasp-tools/main/nicolasp-tools.user.js
-// @match        https://bubble.am/*
-// @match        https://buble.am/*
-// @grant        none
-// @run-at       document-start
-// ==/UserScript==
+
+ // ==UserScript==
+ // @name         NicolasP Tools [J A N]
+ // @namespace    NicolasPTools
+ // @version      4.6.1
+ // @description  Green Neon Edition for Bubble.am
+ // @author       NicolasP [J A N]
+ // @match        https://bubble.am/*
+ // @match        https://buble.am/*
+ // @grant        none
+ // @run-at       document-start
+ // ==/UserScript==
 
 (() => {
-'use strict';
+  'use strict';
 
-const APP = Object.freeze({
-  name: 'NicolasP Tools',
-  version: '4.5.1',
-  author: 'NicolasP [J A N]',
-  instagram: 'https://www.instagram.com/nick_poves/'
-});
+  const A = {
+    version: '4.6.1',
+    author: 'NicolasP [J A N]',
+    instagram: 'https://www.instagram.com/nick_poves/'
+  };
 
-const KEYS = Object.freeze({
-  skin: 'BT41_skin',
-  forceSkin: 'BT41_forceSkin',
-  hideName: 'BT41_hideName',
-  fastFeed: 'BT41_fastFeed',
-  feedKey: 'BT41_feedKey',
-  feedInterval: 'BT41_feedInterval',
-  wasd: 'BT41_wasd',
-  directionDistance: 'BT41_directionDistance'
-});
+  const P = 'BT41_';
+  const T = '__NICOLAS_LOCAL_SKIN_V41__';
 
-const TOKEN = '__NICOLAS_LOCAL_SKIN_V41__';
+  const read = (k, d) => {
+    try { return localStorage.getItem(P + k) ?? d; }
+    catch { return d; }
+  };
 
-const read = (key, fallback) => {
-  try {
-    return localStorage.getItem(KEYS[key]) ?? fallback;
-  } catch {
-    return fallback;
+  const write = (k, v) => {
+    try { localStorage.setItem(P + k, String(v)); }
+    catch {}
+  };
+
+  const clamp = (n, a, b, d) => {
+    n = Number(n);
+    return Number.isFinite(n) ? Math.max(a, Math.min(b, n)) : d;
+  };
+
+  const S = {
+    skin: read('skin', ''),
+    forceSkin: read('forceSkin', 'false') === 'true',
+    hideName: read('hideName', 'false') === 'true',
+    fastFeed: read('fastFeed', 'false') === 'true',
+    feedKey: read('feedKey', 'e').toLowerCase(),
+    feedInterval: clamp(read('feedInterval', 30), 10, 150, 30),
+    wasd: read('wasd', 'false') === 'true',
+    distance: clamp(read('directionDistance', 10000), 1000, 30000, 10000),
+    nick: '',
+    feeding: false,
+    feedTimer: null,
+    moveTimer: null,
+    launcher: false,
+    menu: false,
+    keys: { w: false, a: false, s: false, d: false }
+  };
+
+  if (S.feedKey.length !== 1 || 'wasd'.includes(S.feedKey)) {
+    S.feedKey = 'e';
   }
-};
 
-const save = (key, value) => {
-  try {
-    localStorage.setItem(KEYS[key], String(value));
-  } catch {}
-};
+  const N = {
+    detect() {
+      const inputs = [...document.querySelectorAll('input')].filter(e => {
+        if (!['text', 'search'].includes(e.type)) return false;
+        if (!e.getClientRects().length) return false;
+        const info = [e.id, e.name, e.placeholder, e.getAttribute('aria-label')].join(' ');
+        return /nick|username|player.?name|nombre/i.test(info) || e.disabled || e.readOnly;
+      });
 
-const clamp = (value, min, max, fallback) => {
-  const n = Number(value);
-  return Number.isFinite(n)
-    ? Math.max(min, Math.min(max, n))
-    : fallback;
-};
+      const preferred = inputs.find(e =>
+        /nick|username|player.?name|nombre/i.test(
+          [e.id, e.name, e.placeholder].join(' ')
+        )
+      ) || inputs[0];
 
-const normalize = value =>
-  String(value ?? '')
-    .normalize('NFKC')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
+      const value = preferred?.value?.trim();
 
-const state = {
-  skin: read('skin', ''),
-  forceSkin: read('forceSkin', 'true') === 'true',
-  hideName: read('hideName', 'true') === 'true',
-  fastFeed: read('fastFeed', 'true') === 'true',
-  feedKey: read('feedKey', 'e').toLowerCase(),
-  feedInterval: clamp(read('feedInterval', 30), 10, 150, 30),
-  wasd: read('wasd', 'true') === 'true',
-  directionDistance: clamp(
-    read('directionDistance', 10000),
-    1000, 30000, 10000
-  ),
-  nick: '',
-  feeding: false,
-  feedTimer: null,
-  moveTimer: null,
-  directions: { w: false, a: false, s: false, d: false }
-};
+      if (value && value.length <= 48 && value !== S.nick) {
+        S.nick = value;
+        document.dispatchEvent(new Event('np:nick'));
+      }
+    },
 
-if (
-  state.feedKey.length !== 1 ||
-  'wasd'.includes(state.feedKey)
-) {
-  state.feedKey = 'e';
-}
+    start() {
+      this.detect();
+      let pending = false;
 
-/* ACCOUNT DETECTION */
+      new MutationObserver(() => {
+        if (pending) return;
+        pending = true;
+        setTimeout(() => {
+          pending = false;
+          this.detect();
+        }, 150);
+      }).observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['value', 'readonly', 'disabled']
+      });
 
-const NickDetector = {
-  observer: null,
-
-  detect() {
-    const inputs = [...document.querySelectorAll('input')];
-
-    const candidates = inputs.filter(el => {
-      if (!['text', 'search'].includes(el.type)) return false;
-      if (!el.getClientRects().length) return false;
-
-      const metadata = [
-        el.id,
-        el.name,
-        el.placeholder,
-        el.getAttribute('aria-label')
-      ].join(' ').toLowerCase();
-
-      return (
-        /nick|username|player.?name|nombre/.test(metadata) ||
-        el.readOnly ||
-        el.disabled
-      );
-    });
-
-    const input = candidates.find(el => {
-      const metadata = [
-        el.id, el.name, el.placeholder
-      ].join(' ');
-
-      return /nick|username|player.?name|nombre/i.test(metadata);
-    }) || candidates[0];
-
-    const nick = input?.value?.trim();
-
-    if (nick && nick.length <= 48 && nick !== state.nick) {
-      state.nick = nick;
-
-      document.dispatchEvent(
-        new CustomEvent('np:nick-updated')
-      );
+      document.addEventListener('input', () => this.detect(), true);
+      document.addEventListener('change', () => this.detect(), true);
+      setInterval(() => this.detect(), 2000);
     }
-  },
+  };
 
-  start() {
-    this.detect();
+  const H = {
+    clean(v) {
+      return String(v ?? '')
+        .normalize('NFKC')
+        .replace(/[\u200B-\u200D\uFEFF]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+    },
 
-    let pending = false;
+    matches(v) {
+      if (!S.hideName || !S.nick) return false;
+      const nick = this.clean(S.nick);
+      const text = this.clean(v);
+      if (!nick || !text) return false;
+      if (text === nick) return true;
+      return text.replace(/^\[[^\]]+\]\s*/, '') === nick;
+    },
 
-    this.observer = new MutationObserver(() => {
-      if (pending) return;
-      pending = true;
+    init() {
+      for (const method of ['fillText', 'strokeText']) {
+        const original = CanvasRenderingContext2D.prototype[method];
+        if (typeof original !== 'function') continue;
 
-      setTimeout(() => {
-        pending = false;
-        this.detect();
-      }, 150);
-    });
+        CanvasRenderingContext2D.prototype[method] = function (...args) {
+          if (H.matches(args[0])) return;
+          return original.apply(this, args);
+        };
+      }
+    }
+  };
 
-    this.observer.observe(document.documentElement, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['value', 'readonly', 'disabled']
-    });
-
-    document.addEventListener('input', () => this.detect(), true);
-    document.addEventListener('change', () => this.detect(), true);
-
-    setInterval(() => this.detect(), 2000);
-  }
-};
-
-/* SKIN ENGINE */
-
-const SkinEngine = {
-  init() {
-    const descriptor =
-      Object.getOwnPropertyDescriptor(
+  const K = {
+    init() {
+      const descriptor = Object.getOwnPropertyDescriptor(
         HTMLImageElement.prototype, 'src'
       );
 
-    if (descriptor?.get && descriptor?.set) {
-      try {
-        Object.defineProperty(
-          HTMLImageElement.prototype,
-          'src',
-          {
+      if (descriptor?.get && descriptor?.set) {
+        try {
+          Object.defineProperty(HTMLImageElement.prototype, 'src', {
             configurable: true,
             enumerable: descriptor.enumerable,
-
-            get() {
-              return descriptor.get.call(this);
-            },
-
+            get() { return descriptor.get.call(this); },
             set(value) {
-              const result =
-                state.skin &&
-                typeof value === 'string' &&
-                value.includes(TOKEN)
-                  ? state.skin
-                  : value;
-
-              return descriptor.set.call(this, result);
+              const next = S.skin && typeof value === 'string' && value.includes(T)
+                ? S.skin : value;
+              return descriptor.set.call(this, next);
             }
-          }
-        );
-      } catch {}
-    }
-
-    let originalSkin;
-
-    try {
-      Object.defineProperty(window, '_localSkin', {
-        configurable: true,
-
-        get() {
-          return state.forceSkin && state.skin
-            ? TOKEN
-            : originalSkin;
-        },
-
-        set(value) {
-          originalSkin = value;
-        }
-      });
-    } catch {}
-
-    setInterval(() => {
-      if (state.forceSkin && state.skin) {
-        try {
-          window._localSkin = TOKEN;
+          });
         } catch {}
       }
-    }, 250);
-  }
-};
 
-/* NAME ENGINE */
+      let original;
 
-const NameEngine = {
-  init() {
-    const shouldHide = (ctx, text) => {
-      if (!state.hideName || !state.nick) return false;
+      try {
+        Object.defineProperty(window, '_localSkin', {
+          configurable: true,
+          get() { return S.forceSkin && S.skin ? T : original; },
+          set(v) { original = v; }
+        });
+      } catch {}
 
-      if (normalize(text) !== normalize(state.nick)) {
-        return false;
+      setInterval(() => {
+        if (S.forceSkin && S.skin) {
+          try { window._localSkin = T; } catch {}
+        }
+      }, 250);
+    }
+  };
+
+  const F = {
+    event(type) {
+      return new KeyboardEvent(type, {
+        key: 'w',
+        code: 'KeyW',
+        keyCode: 87,
+        which: 87,
+        bubbles: true,
+        cancelable: true
+      });
+    },
+
+    once() {
+      for (const type of ['keydown', 'keyup']) {
+        window.dispatchEvent(this.event(type));
+        document.dispatchEvent(this.event(type));
+      }
+    },
+
+    start() {
+      if (S.feeding || !S.fastFeed) return;
+      S.feeding = true;
+      this.once();
+      S.feedTimer = setInterval(() => this.once(), S.feedInterval);
+    },
+
+    stop() {
+      S.feeding = false;
+      clearInterval(S.feedTimer);
+      S.feedTimer = null;
+    }
+  };
+
+  const M = {
+    update() {
+      if (!S.wasd) return;
+
+      let x = Number(S.keys.d) - Number(S.keys.a);
+      let y = Number(S.keys.s) - Number(S.keys.w);
+
+      if (!x && !y) return;
+
+      if (x && y) {
+        x *= Math.SQRT1_2;
+        y *= Math.SQRT1_2;
       }
 
-      const match =
-        String(ctx.font || '').match(/(\d+(?:\.\d+)?)px/i);
+      const clientX = innerWidth / 2 + x * S.distance;
+      const clientY = innerHeight / 2 + y * S.distance;
 
-      return !!match && Number(match[1]) >= 35;
-    };
+      const options = {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        clientX,
+        clientY,
+        screenX: clientX,
+        screenY: clientY
+      };
 
-    for (const method of ['fillText', 'strokeText']) {
-      const original =
-        CanvasRenderingContext2D.prototype[method];
-
-      CanvasRenderingContext2D.prototype[method] =
-        function (...args) {
-          if (shouldHide(this, args[0])) return;
-          return original.apply(this, args);
-        };
-    }
-  }
-};
-
-/* FAST FEED */
-
-const FeedEngine = {
-  event(type) {
-    return new KeyboardEvent(type, {
-      key: 'w',
-      code: 'KeyW',
-      keyCode: 87,
-      which: 87,
-      bubbles: true,
-      cancelable: true
-    });
-  },
-
-  once() {
-    for (const type of ['keydown', 'keyup']) {
-      window.dispatchEvent(this.event(type));
-      document.dispatchEvent(this.event(type));
-    }
-  },
-
-  start() {
-    if (state.feeding || !state.fastFeed) return;
-
-    state.feeding = true;
-    this.once();
-
-    state.feedTimer = setInterval(
-      () => this.once(),
-      state.feedInterval
-    );
-  },
-
-  stop() {
-    state.feeding = false;
-
-    if (state.feedTimer !== null) {
-      clearInterval(state.feedTimer);
-      state.feedTimer = null;
-    }
-  }
-};
-
-/* MOVEMENT ENGINE */
-
-const MovementEngine = {
-  update() {
-    if (!state.wasd) return;
-
-    let x =
-      Number(state.directions.d) -
-      Number(state.directions.a);
-
-    let y =
-      Number(state.directions.s) -
-      Number(state.directions.w);
-
-    if (!x && !y) return;
-
-    if (x && y) {
-      x *= Math.SQRT1_2;
-      y *= Math.SQRT1_2;
-    }
-
-    const targetX =
-      window.innerWidth / 2 +
-      x * state.directionDistance;
-
-    const targetY =
-      window.innerHeight / 2 +
-      y * state.directionDistance;
-
-    const options = {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-      clientX: targetX,
-      clientY: targetY,
-      screenX: targetX,
-      screenY: targetY
-    };
-
-    const targets = [
-      window,
-      document,
-      document.querySelector('canvas')
-    ];
-
-    for (const target of targets) {
-      if (target) {
-        target.dispatchEvent(
-          new MouseEvent('mousemove', options)
-        );
+      for (const target of [window, document, document.querySelector('canvas')]) {
+        if (target) target.dispatchEvent(new MouseEvent('mousemove', options));
       }
+    },
+
+    start() {
+      this.update();
+      if (S.moveTimer === null) {
+        S.moveTimer = setInterval(() => this.update(), 16);
+      }
+    },
+
+    stop() {
+      clearInterval(S.moveTimer);
+      S.moveTimer = null;
+    },
+
+    reset() {
+      for (const k of Object.keys(S.keys)) S.keys[k] = false;
+      this.stop();
     }
-  },
+  };
 
-  start() {
-    this.update();
+  const B = {
+    init() {
+      const editable = e =>
+        e instanceof HTMLInputElement ||
+        e instanceof HTMLTextAreaElement ||
+        e?.isContentEditable;
 
-    if (state.moveTimer === null) {
-      state.moveTimer = setInterval(
-        () => this.update(),
-        16
-      );
-    }
-  },
+      window.addEventListener('keydown', e => {
+        if (!e.isTrusted || editable(e.target)) return;
+        const key = e.key.toLowerCase();
 
-  stop() {
-    if (state.moveTimer !== null) {
-      clearInterval(state.moveTimer);
-      state.moveTimer = null;
-    }
-  },
-
-  reset() {
-    for (const key of Object.keys(state.directions)) {
-      state.directions[key] = false;
-    }
-
-    this.stop();
-  }
-};
-
-/* KEYBOARD CONTROLLER */
-
-const KeyboardController = {
-  init() {
-    window.addEventListener('keydown', event => {
-      if (!event.isTrusted) return;
-
-      const target = event.target;
-
-      if (
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target?.isContentEditable
-      ) {
-        return;
-      }
-
-      const key = event.key.toLowerCase();
-
-      if (key === 'escape') {
-        setTimeout(() => {
-          document.dispatchEvent(
-            new CustomEvent('np:toggle')
-          );
-        }, 30);
-        return;
-      }
-
-      if (state.fastFeed && key === state.feedKey) {
-        event.preventDefault();
-        event.stopPropagation();
-        FeedEngine.start();
-        return;
-      }
-
-      if (
-        state.wasd &&
-        Object.hasOwn(state.directions, key)
-      ) {
-        event.preventDefault();
-        event.stopPropagation();
-
-        state.directions[key] = true;
-        MovementEngine.start();
-      }
-    }, true);
-
-    window.addEventListener('keyup', event => {
-      if (!event.isTrusted) return;
-
-      const key = event.key.toLowerCase();
-
-      if (key === state.feedKey) {
-        event.preventDefault();
-        event.stopPropagation();
-        FeedEngine.stop();
-        return;
-      }
-
-      if (Object.hasOwn(state.directions, key)) {
-        state.directions[key] = false;
-
-        if (state.wasd) {
-          event.preventDefault();
-          event.stopPropagation();
-          MovementEngine.update();
+        if (key === 'escape') {
+          document.dispatchEvent(new Event('np:toggle'));
+          return;
         }
 
-        if (!Object.values(state.directions).some(Boolean)) {
-          MovementEngine.stop();
+        if (S.fastFeed && key === S.feedKey) {
+          e.preventDefault();
+          e.stopPropagation();
+          F.start();
+          return;
         }
-      }
-    }, true);
 
-    window.addEventListener('blur', () => {
-      FeedEngine.stop();
-      MovementEngine.reset();
-    });
-  }
-};
+        if (S.wasd && Object.hasOwn(S.keys, key)) {
+          e.preventDefault();
+          e.stopPropagation();
+          S.keys[key] = true;
+          M.start();
+        }
+      }, true);
 
-/* GAMING UI */
+      window.addEventListener('keyup', e => {
+        if (!e.isTrusted) return;
+        const key = e.key.toLowerCase();
 
-const UI = {
-  root: null,
-  shadow: null,
-  visible: false,
+        if (key === S.feedKey) {
+          if (S.fastFeed || S.feeding) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+          F.stop();
+          return;
+        }
 
-  icon(name, size = 20) {
-    const paths = {
-      settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l-2.52 2.52A1.7 1.7 0 0 0 15 19.4L14 21h-4l-1-1.6a1.7 1.7 0 0 0-2.22.34l-2.52-2.52A1.7 1.7 0 0 0 4.6 15L3 14v-4l1.6-1a1.7 1.7 0 0 0-.34-2.22l2.52-2.52A1.7 1.7 0 0 0 9 4.6L10 3h4l1 1.6a1.7 1.7 0 0 0 2.22-.34l2.52 2.52A1.7 1.7 0 0 0 19.4 9L21 10v4Z"/>',
-      instagram: '<rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="18" cy="6" r="1" fill="currentColor" stroke="none"/>',
-      eye: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
-      bolt: '<path d="m13 2-9 12h7l-1 8 10-12h-7Z"/>',
-      move: '<path d="M12 2v20M2 12h20m-14-6 4-4 4 4m-8 12 4 4 4-4M6 8l-4 4 4 4m12-8 4 4-4 4"/>',
-      close: '<path d="M18 6 6 18M6 6l12 12"/>'
-    };
+        if (Object.hasOwn(S.keys, key)) {
+          S.keys[key] = false;
+          if (S.wasd) {
+            e.preventDefault();
+            e.stopPropagation();
+            M.update();
+          }
+          if (!Object.values(S.keys).some(Boolean)) M.stop();
+        }
+      }, true);
 
-    return `<svg width="${size}" height="${size}"
-      viewBox="0 0 24 24" fill="none"
-      stroke="currentColor" stroke-width="1.8"
-      stroke-linecap="round" stroke-linejoin="round"
-      aria-hidden="true">${paths[name]}</svg>`;
-  },
+      window.addEventListener('blur', () => {
+        F.stop();
+        M.reset();
+      });
+    }
+  };
 
-  mount() {
-    if (document.getElementById('nicolasp-tools')) return;
+  const U = {
+    root: null,
+    shadow: null,
 
-    this.root = document.createElement('div');
-    this.root.id = 'nicolasp-tools';
-    document.body.appendChild(this.root);
+    mount() {
+      if (document.getElementById('nicolasp-tools')) return;
 
-    this.shadow = this.root.attachShadow({ mode: 'open' });
+      this.root = document.createElement('div');
+      this.root.id = 'nicolasp-tools';
+      document.body.appendChild(this.root);
+      this.shadow = this.root.attachShadow({ mode: 'open' });
 
-    this.shadow.innerHTML = `
+      const ig = `<svg width="22" height="22" viewBox="0 0 24 24"
+        fill="none" stroke="currentColor" stroke-width="1.8"
+        stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="2" width="20" height="20" rx="5"/>
+        <circle cx="12" cy="12" r="4"/>
+        <circle cx="18" cy="6" r="1" fill="currentColor" stroke="none"/>
+      </svg>`;
+
+      this.shadow.innerHTML = `
       <style>
         :host {
           all: initial;
           font-family: Inter, system-ui, Arial, sans-serif;
           color: #f2fff3;
-          --neon: #39ff14;
-          --dark: #080b09;
+          --green: #39ff14;
+          --bg: #080b09;
           --surface: #101713;
           --border: #275c39;
         }
 
         * { box-sizing: border-box; }
-
         button, input { font: inherit; }
         button { cursor: pointer; }
 
@@ -525,15 +369,17 @@ const UI = {
           justify-content: center;
           width: 48px;
           height: 48px;
-          color: var(--neon);
           background: #101a13;
-          border: 1px solid var(--neon);
+          color: var(--green);
+          border: 1px solid var(--green);
           border-radius: 14px;
-          box-shadow: 0 0 18px #39ff1440, 0 12px 35px #000a;
+          box-shadow: 0 0 20px #39ff1460;
+          font-size: 23px;
+          transition: box-shadow .2s;
         }
 
         .launcher:hover {
-          box-shadow: 0 0 25px #39ff1480;
+          box-shadow: 0 0 28px #39ff1490;
         }
 
         .panel {
@@ -541,17 +387,17 @@ const UI = {
           top: 76px;
           right: 16px;
           z-index: 2147483647;
+          display: none;
+          flex-direction: column;
           width: 356px;
           max-width: calc(100vw - 32px);
           max-height: calc(100vh - 94px);
-          display: none;
-          flex-direction: column;
           overflow: hidden;
-          background: var(--dark);
-          border: 1px solid #358b43;
-          border-radius: 19px;
-          box-shadow: 0 0 28px #39ff1420, 0 25px 75px #000c;
+          background: var(--bg);
           color: #f2fff3;
+          border: 1px solid var(--green);
+          border-radius: 18px;
+          box-shadow: 0 0 30px #39ff1430, 0 24px 70px #000c;
           font-size: 13px;
         }
 
@@ -562,15 +408,16 @@ const UI = {
           align-items: center;
           justify-content: space-between;
           gap: 10px;
-          padding: 19px;
-          background: linear-gradient(125deg,#142b1b,#080b09);
+          padding: 18px;
+          background: linear-gradient(110deg, #172b1b, #080b09);
           border-bottom: 1px solid var(--border);
         }
 
         .identity {
           display: flex;
           align-items: center;
-          gap: 11px;
+          gap: 10px;
+          min-width: 0;
         }
 
         .logo {
@@ -578,55 +425,57 @@ const UI = {
           place-items: center;
           width: 43px;
           height: 43px;
-          border-radius: 12px;
-          background: #39ff14;
+          flex-shrink: 0;
+          background: linear-gradient(135deg, #39ff14, #0b842f);
           color: #071006;
-          font-size: 22px;
+          border: 1px solid #9dff85;
+          border-radius: 12px;
+          font-size: 23px;
           font-weight: 900;
-          box-shadow: 0 0 19px #39ff1460;
+          box-shadow: 0 0 20px #39ff1460;
         }
 
         .brand {
-          font-size: 16px;
+          font-size: 15px;
           font-weight: 850;
-          letter-spacing: -.5px;
+          color: white;
+          white-space: nowrap;
         }
 
+        .tag { color: var(--green); }
+
         .subtitle {
-          color: var(--neon);
-          font-size: 10px;
-          margin-top: 3px;
-          letter-spacing: .7px;
+          margin-top: 4px;
+          color: var(--green);
+          font-size: 9px;
+          letter-spacing: 1px;
         }
 
         .headRight {
           display: flex;
           align-items: center;
-          gap: 8px;
+          gap: 7px;
         }
 
         .version {
-          color: var(--neon);
-          background: #39ff1412;
-          padding: 5px 7px;
-          border-radius: 7px;
+          color: var(--green);
           font-size: 10px;
+          font-weight: 800;
         }
 
         .close {
-          display: grid;
-          place-items: center;
+          padding: 5px;
           border: 0;
           background: transparent;
-          color: #b6d1bd;
-          padding: 5px;
+          color: #c6e6cb;
+          font-size: 22px;
         }
 
         .scroll {
-          padding: 15px;
+          padding: 14px;
           overflow-y: auto;
           scrollbar-width: thin;
-          scrollbar-color: #275c39 transparent;
+          scrollbar-color: #327e3d transparent;
         }
 
         .status {
@@ -635,91 +484,80 @@ const UI = {
           align-items: center;
           gap: 10px;
           padding: 13px;
-          margin-bottom: 14px;
+          margin-bottom: 13px;
           background: #101a13;
-          border: 1px solid #275c39;
-          border-radius: 12px;
+          border: 1px solid #2b6a37;
+          border-left: 3px solid var(--green);
+          border-radius: 11px;
         }
 
         .overline {
-          color: #8aa392;
+          color: #8ba893;
           font-size: 10px;
           font-weight: 750;
           letter-spacing: 1px;
-          text-transform: uppercase;
         }
 
         .nick {
           margin-top: 5px;
+          color: white;
+          font-size: 15px;
           font-weight: 800;
-          font-size: 14px;
         }
 
         .pill {
-          padding: 6px 9px;
-          background: #15381b;
-          color: var(--neon);
+          color: var(--green);
+          background: #39ff1415;
+          border: 1px solid #39ff1455;
           border-radius: 20px;
+          padding: 6px 9px;
           font-size: 10px;
-          font-weight: 750;
           white-space: nowrap;
         }
 
-        .pill.wait {
-          background: #3a301b;
-          color: #e8c46a;
-        }
-
         .section {
-          padding: 15px;
+          padding: 14px;
           margin-bottom: 12px;
-          border: 1px solid #275c39;
-          border-radius: 14px;
-          background: #101713;
+          background: linear-gradient(145deg, #121c14, #0b110d);
+          border: 1px solid #2a5233;
+          border-radius: 12px;
+          transition: border-color .2s;
         }
 
-        .sectionHead {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          padding-bottom: 12px;
-          margin-bottom: 5px;
-          border-bottom: 1px solid #275c39;
-        }
-
-        .sectionIcon {
-          display: grid;
-          place-items: center;
-          width: 31px;
-          height: 31px;
-          background: #17351e;
-          color: var(--neon);
-          border-radius: 9px;
-        }
+        .section:hover { border-color: #39ff1480; }
 
         .sectionTitle {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding-bottom: 12px;
+          margin-bottom: 4px;
+          border-bottom: 1px solid var(--border);
+          color: #f1fff3;
           font-size: 12px;
-          font-weight: 800;
-          letter-spacing: .4px;
+          font-weight: 850;
+          letter-spacing: .8px;
+        }
+
+        .sectionTitle span {
+          color: var(--green);
+          font-size: 17px;
         }
 
         .row {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 12px;
+          gap: 10px;
           padding: 11px 0;
-        }
-
-        .label {
+          color: #d9eddd;
           font-size: 12px;
-          color: #e2f1e5;
         }
 
         .hint {
-          color: #8aa392;
-          font-size: 10px;
           margin-top: 4px;
+          color: #8ca994;
+          font-size: 10px;
         }
 
         .switch {
@@ -731,6 +569,7 @@ const UI = {
 
         .switch input {
           position: absolute;
+          inset: 0;
           width: 100%;
           height: 100%;
           margin: 0;
@@ -742,8 +581,8 @@ const UI = {
           display: block;
           width: 38px;
           height: 22px;
+          background: #304333;
           border-radius: 20px;
-          background: #36473a;
           pointer-events: none;
         }
 
@@ -754,71 +593,72 @@ const UI = {
           left: 3px;
           width: 16px;
           height: 16px;
-          border-radius: 50%;
           background: white;
+          border-radius: 50%;
           transition: transform .2s;
         }
 
         .switch input:checked + .track {
-          background: var(--neon);
+          background: var(--green);
+          box-shadow: 0 0 12px #39ff1460;
         }
 
         .switch input:checked + .track::after {
-          transform: translateX(16px);
           background: #071006;
+          transform: translateX(16px);
         }
 
         .action {
           width: 100%;
-          padding: 11px;
           margin: 6px 0;
-          border: 1px solid var(--neon);
-          border-radius: 10px;
-          background: var(--neon);
+          padding: 11px;
+          background: linear-gradient(110deg, #39ff14, #20c94a);
+          border: 1px solid #9dff85;
+          border-radius: 9px;
           color: #071006;
           font-size: 12px;
-          font-weight: 800;
-          box-shadow: 0 0 14px #39ff142a;
+          font-weight: 850;
+          box-shadow: 0 0 13px #39ff1430;
         }
 
+        .action:hover { box-shadow: 0 0 22px #39ff1470; }
+
         .action.secondary {
-          background: #17301d;
-          border-color: #326b3b;
-          color: #c9e7cf;
+          background: #17271b;
+          border-color: #356440;
+          color: #c5e0ca;
           box-shadow: none;
         }
 
-        .action:hover { filter: brightness(1.12); }
-
         .value {
-          color: var(--neon);
+          color: var(--green);
           font-size: 11px;
-          font-weight: 750;
+          font-weight: 800;
         }
 
         .range {
           width: 100%;
-          accent-color: var(--neon);
           margin: 8px 0;
+          accent-color: var(--green);
         }
 
         .keyInput {
-          width: 58px;
+          width: 56px;
           padding: 8px;
-          border: 1px solid #326b3b;
+          background: #0c170e;
+          color: var(--green);
+          border: 1px solid #39ff1475;
           border-radius: 8px;
-          outline: none;
-          background: #17271b;
-          color: var(--neon);
           text-align: center;
+          outline: none;
         }
 
         .keys {
           display: grid;
-          grid-template-columns: repeat(3,39px);
-          grid-template-rows: repeat(2,35px);
+          grid-template-columns: repeat(3, 38px);
+          grid-template-rows: repeat(2, 34px);
           justify-content: center;
-          gap: 6px;
+          gap: 7px;
           margin: 12px 0;
         }
 
@@ -826,10 +666,11 @@ const UI = {
           display: grid;
           place-items: center;
           background: #17271b;
-          border: 1px solid #326b3b;
-          border-radius: 8px;
-          font-weight: 800;
-          color: var(--neon);
+          color: var(--green);
+          border: 1px solid #368f49;
+          border-bottom: 3px solid var(--green);
+          border-radius: 7px;
+          font-weight: 850;
         }
 
         .w { grid-column: 2; }
@@ -838,25 +679,26 @@ const UI = {
         .d { grid-column: 3; }
 
         .footer {
-          padding: 16px 19px;
-          background: #0c130e;
-          border-top: 1px solid #275c39;
+          padding: 15px;
+          background: #090f0a;
+          border-top: 1px solid #2b6b37;
         }
 
         .author {
           display: flex;
-          align-items: center;
           justify-content: space-between;
+          align-items: center;
           padding: 12px;
-          background: #101a13;
-          border: 1px solid #275c39;
-          border-radius: 12px;
+          background: #112015;
+          border: 1px solid #327f3e;
+          border-radius: 11px;
         }
 
         .authorName {
+          margin-top: 5px;
+          color: white;
           font-size: 15px;
-          font-weight: 800;
-          margin-top: 4px;
+          font-weight: 850;
         }
 
         .instagram {
@@ -864,175 +706,129 @@ const UI = {
           place-items: center;
           width: 40px;
           height: 40px;
-          border-radius: 11px;
+          background: var(--green);
           color: #071006;
-          background: var(--neon);
-          box-shadow: 0 0 14px #39ff1440;
+          border-radius: 11px;
+          box-shadow: 0 0 16px #39ff1450;
+          text-decoration: none;
         }
-
-        .instagram:hover { filter: brightness(1.15); }
 
         .copyright {
           display: flex;
           justify-content: space-between;
-          margin-top: 13px;
-          color: #789582;
+          margin-top: 12px;
+          color: #829e88;
           font-size: 10px;
         }
       </style>
 
-      <button id="launcher" class="launcher">
-        ${this.icon('settings', 23)}
-      </button>
+      <button id="launcher" class="launcher" title="NicolasP Tools">⚙</button>
 
       <section id="panel" class="panel">
         <header class="head">
           <div class="identity">
             <div class="logo">N</div>
             <div>
-              <div class="brand">NicolasP Tools [J A N]</div>
+              <div class="brand">NicolasP <span class="tag">[J A N]</span></div>
               <div class="subtitle">BUBBLE.AM CONTROL CENTER</div>
             </div>
           </div>
           <div class="headRight">
-            <span class="version">v${APP.version}</span>
-            <button class="close" id="close">
-              ${this.icon('close', 17)}
-            </button>
+            <span class="version">v${A.version}</span>
+            <button id="close" class="close">×</button>
           </div>
         </header>
 
         <div class="scroll">
           <div class="status">
             <div>
-              <div class="overline">Jugador conectado</div>
-              <div class="nick" id="nick">Detectando...</div>
+              <div class="overline">JUGADOR CONECTADO</div>
+              <div id="nick" class="nick">Detectando...</div>
             </div>
-            <span class="pill wait" id="nickStatus">Pendiente</span>
+            <span id="nickStatus" class="pill">Pendiente</span>
           </div>
 
-          <div class="section">
-            <div class="sectionHead">
-              <span class="sectionIcon">${this.icon('eye')}</span>
-              <span class="sectionTitle">APARIENCIA</span>
-            </div>
-
+          <section class="section">
+            <div class="sectionTitle"><span>◉</span> APARIENCIA</div>
             <div class="row">
               <div>
-                <div class="label">Skin personalizada</div>
-                <div class="hint" id="skinStatus">
-                  ${state.skin ? 'Imagen cargada' : 'Sin imagen'}
-                </div>
+                Skin personalizada
+                <div id="skinStatus" class="hint">${S.skin ? 'Imagen cargada' : 'Sin imagen'}</div>
               </div>
             </div>
-
-            <input id="skinFile" type="file" accept="image/*" hidden>
-            <button id="chooseSkin" class="action">
-              SELECCIONAR SKIN
-            </button>
-
+            <input type="file" id="skinFile" accept="image/*" hidden>
+            <button id="chooseSkin" class="action">SELECCIONAR SKIN</button>
             <div class="row">
-              <span class="label">Forzar skin</span>
+              Forzar skin
               <label class="switch">
-                <input id="forceSkin" type="checkbox"
-                  ${state.forceSkin ? 'checked' : ''}>
+                <input id="forceSkin" type="checkbox" ${S.forceSkin ? 'checked' : ''}>
                 <span class="track"></span>
               </label>
             </div>
-
             <div class="row">
-              <span class="label">Ocultar nick en celula</span>
+              Ocultar nick en célula
               <label class="switch">
-                <input id="hideName" type="checkbox"
-                  ${state.hideName ? 'checked' : ''}>
+                <input id="hideName" type="checkbox" ${S.hideName ? 'checked' : ''}>
                 <span class="track"></span>
               </label>
             </div>
+            <button id="removeSkin" class="action secondary">ELIMINAR SKIN</button>
+          </section>
 
-            <button id="removeSkin" class="action secondary">
-              ELIMINAR SKIN
-            </button>
-          </div>
-
-          <div class="section">
-            <div class="sectionHead">
-              <span class="sectionIcon">${this.icon('bolt')}</span>
-              <span class="sectionTitle">FAST FEED</span>
-            </div>
-
+          <section class="section">
+            <div class="sectionTitle"><span>ϟ</span> FAST FEED</div>
             <div class="row">
-              <span class="label">Activado</span>
+              Activado
               <label class="switch">
-                <input id="fastFeed" type="checkbox"
-                  ${state.fastFeed ? 'checked' : ''}>
+                <input id="fastFeed" type="checkbox" ${S.fastFeed ? 'checked' : ''}>
                 <span class="track"></span>
               </label>
             </div>
-
             <div class="row">
-              <span class="label">Tecla de activacion</span>
+              Tecla de activación
               <input id="feedKey" class="keyInput" maxlength="1">
             </div>
-
             <div class="row">
-              <span class="label">Intervalo</span>
-              <span class="value" id="feedValue">
-                ${state.feedInterval} ms
-              </span>
+              Intervalo
+              <span id="feedValue" class="value">${S.feedInterval} ms</span>
             </div>
+            <input id="feedSpeed" class="range" type="range"
+              min="10" max="150" step="5" value="${S.feedInterval}">
+          </section>
 
-            <input id="feedSpeed" class="range"
-              type="range" min="10" max="150" step="5"
-              value="${state.feedInterval}">
-          </div>
-
-          <div class="section">
-            <div class="sectionHead">
-              <span class="sectionIcon">${this.icon('move')}</span>
-              <span class="sectionTitle">MOVIMIENTO WASD</span>
-            </div>
-
+          <section class="section">
+            <div class="sectionTitle"><span>✥</span> MOVIMIENTO WASD</div>
             <div class="row">
-              <span class="label">Controles WASD</span>
+              Controles WASD
               <label class="switch">
-                <input id="wasd" type="checkbox"
-                  ${state.wasd ? 'checked' : ''}>
+                <input id="wasd" type="checkbox" ${S.wasd ? 'checked' : ''}>
                 <span class="track"></span>
               </label>
             </div>
-
             <div class="keys">
               <div class="key w">W</div>
               <div class="key a">A</div>
               <div class="key s">S</div>
               <div class="key d">D</div>
             </div>
-
             <div class="row">
-              <span class="label">Fuerza de direccion</span>
-              <span class="value" id="directionValue">
-                ${state.directionDistance}
-              </span>
+              Fuerza de dirección
+              <span id="directionValue" class="value">${S.distance.toLocaleString()}</span>
             </div>
-
-            <input id="direction" class="range"
-              type="range" min="1000" max="30000"
-              step="1000" value="${state.directionDistance}">
-          </div>
+            <input id="direction" class="range" type="range"
+              min="1000" max="30000" step="1000" value="${S.distance}">
+          </section>
         </div>
 
         <footer class="footer">
           <div class="author">
             <div>
               <div class="overline">DEVELOPED BY</div>
-              <div class="authorName">NicolasP [J A N]</div>
+              <div class="authorName">NicolasP <span class="tag">[J A N]</span></div>
             </div>
-            <a class="instagram"
-               href="${APP.instagram}"
-               target="_blank"
-               rel="noopener noreferrer"
-               title="Instagram @nick_poves">
-              ${this.icon('instagram', 22)}
+            <a class="instagram" href="${A.instagram}" target="_blank"
+              rel="noopener noreferrer" title="Instagram @nick_poves">
+              ${ig}
             </a>
           </div>
           <div class="copyright">
@@ -1040,199 +836,151 @@ const UI = {
             <span>ESC · Mostrar / ocultar</span>
           </div>
         </footer>
-      </section>
-    `;
+      </section>`;
 
-    this.bind();
-  },
+      this.bind();
+    },
 
-  find(id) {
-    return this.shadow.getElementById(id);
-  },
+    $(id) {
+      return this.shadow.getElementById(id);
+    },
 
-  refreshNick() {
-    this.find('nick').textContent =
-      state.nick || 'No detectado';
+    bind() {
+      const $ = id => this.$(id);
 
-    this.find('nickStatus').textContent =
-      state.nick ? 'Detectado' : 'Pendiente';
+      const showLauncher = visible => {
+        S.launcher = visible;
+        $('launcher').style.display = visible ? 'flex' : 'none';
+        if (!visible) {
+          S.menu = false;
+          $('panel').classList.remove('open');
+        }
+      };
 
-    this.find('nickStatus').classList.toggle(
-      'wait',
-      !state.nick
-    );
-  },
+      const showPanel = visible => {
+        S.menu = visible;
+        $('panel').classList.toggle('open', visible);
+      };
 
-  bind() {
-    const $ = id => this.find(id);
+      const refreshNick = () => {
+        $('nick').textContent = S.nick || 'No detectado';
+        $('nickStatus').textContent = S.nick ? 'Detectado' : 'Pendiente';
+      };
 
-    const launcher = $('launcher');
-    const panel = $('panel');
+      document.addEventListener('np:nick', refreshNick);
+      document.addEventListener('np:toggle', () => showLauncher(!S.launcher));
 
-    document.addEventListener('np:toggle', () => {
-      this.visible = !this.visible;
-      launcher.style.display = this.visible ? 'flex' : 'none';
+      $('launcher').addEventListener('click', () => showPanel(!S.menu));
+      $('close').addEventListener('click', () => showPanel(false));
 
-      if (!this.visible) {
-        panel.classList.remove('open');
-      }
-    });
+      const toggle = (id, key, callback) => {
+        $(id).addEventListener('change', e => {
+          S[key] = e.target.checked;
+          write(key, S[key]);
+          callback?.();
+        });
+      };
 
-    launcher.addEventListener('click', () => {
-      panel.classList.toggle('open');
-    });
-
-    $('close').addEventListener('click', () => {
-      panel.classList.remove('open');
-    });
-
-    document.addEventListener('np:nick-updated', () => {
-      this.refreshNick();
-    });
-
-    document.addEventListener('pointerdown', event => {
-      if (event.target === document.querySelector('canvas')) {
-        this.visible = false;
-        launcher.style.display = 'none';
-        panel.classList.remove('open');
-      }
-    }, true);
-
-    const toggle = (id, key, callback) => {
-      $(id).addEventListener('change', event => {
-        state[key] = event.target.checked;
-        save(key, state[key]);
-        if (callback) callback();
+      toggle('forceSkin', 'forceSkin');
+      toggle('hideName', 'hideName');
+      toggle('fastFeed', 'fastFeed', () => {
+        if (!S.fastFeed) F.stop();
       });
-    };
+      toggle('wasd', 'wasd', () => {
+        if (!S.wasd) M.reset();
+      });
 
-    toggle('forceSkin', 'forceSkin');
-    toggle('hideName', 'hideName');
+      $('chooseSkin').addEventListener('click', () => $('skinFile').click());
 
-    toggle('fastFeed', 'fastFeed', () => {
-      if (!state.fastFeed) FeedEngine.stop();
-    });
+      $('skinFile').addEventListener('change', e => {
+        const file = e.target.files?.[0];
+        if (!file || !file.type.startsWith('image/')) return;
 
-    toggle('wasd', 'wasd', () => {
-      if (!state.wasd) MovementEngine.reset();
-    });
+        const reader = new FileReader();
 
-    $('chooseSkin').addEventListener('click', () => {
-      $('skinFile').click();
-    });
+        reader.onload = () => {
+          if (typeof reader.result !== 'string') return;
 
-    $('skinFile').addEventListener('change', event => {
-      const file = event.target.files?.[0];
-      if (!file || !file.type.startsWith('image/')) return;
+          try {
+            localStorage.setItem(P + 'skin', reader.result);
+          } catch {
+            alert('La imagen es demasiado grande.');
+            return;
+          }
 
-      const reader = new FileReader();
+          S.skin = reader.result;
+          S.forceSkin = true;
+          write('forceSkin', true);
+          $('forceSkin').checked = true;
+          $('skinStatus').textContent = 'Imagen cargada';
 
-      reader.onload = () => {
-        if (typeof reader.result !== 'string') return;
+          try { window._localSkin = T; } catch {}
+        };
 
-        try {
-          localStorage.setItem(KEYS.skin, reader.result);
-        } catch {
-          alert('Imagen demasiado grande para guardar.');
+        reader.readAsDataURL(file);
+      });
+
+      $('removeSkin').addEventListener('click', () => {
+        S.skin = '';
+        S.forceSkin = false;
+
+        try { localStorage.removeItem(P + 'skin'); } catch {}
+        write('forceSkin', false);
+
+        $('forceSkin').checked = false;
+        $('skinFile').value = '';
+        $('skinStatus').textContent = 'Sin imagen';
+      });
+
+      $('feedKey').value = S.feedKey.toUpperCase();
+
+      $('feedKey').addEventListener('change', e => {
+        const key = e.target.value.trim().toLowerCase();
+
+        if (key.length !== 1 || 'wasd'.includes(key)) {
+          e.target.value = S.feedKey.toUpperCase();
           return;
         }
 
-        state.skin = reader.result;
-        state.forceSkin = true;
+        F.stop();
+        S.feedKey = key;
+        write('feedKey', key);
+        e.target.value = key.toUpperCase();
+      });
 
-        save('forceSkin', true);
+      $('feedSpeed').addEventListener('input', e => {
+        S.feedInterval = clamp(e.target.value, 10, 150, 30);
+        write('feedInterval', S.feedInterval);
+        $('feedValue').textContent = S.feedInterval + ' ms';
 
-        $('forceSkin').checked = true;
-        $('skinStatus').textContent = 'Imagen cargada';
+        if (S.feeding) {
+          F.stop();
+          F.start();
+        }
+      });
 
-        try {
-          window._localSkin = TOKEN;
-        } catch {}
-      };
+      $('direction').addEventListener('input', e => {
+        S.distance = clamp(e.target.value, 1000, 30000, 10000);
+        write('directionDistance', S.distance);
+        $('directionValue').textContent = S.distance.toLocaleString();
+      });
 
-      reader.readAsDataURL(file);
-    });
+      refreshNick();
+    }
+  };
 
-    $('removeSkin').addEventListener('click', () => {
-      state.skin = '';
-      localStorage.removeItem(KEYS.skin);
+  K.init();
+  H.init();
+  B.init();
 
-      state.forceSkin = false;
-      save('forceSkin', false);
+  const boot = () => {
+    N.start();
+    U.mount();
+  };
 
-      $('forceSkin').checked = false;
-      $('skinStatus').textContent = 'Sin imagen';
-      $('skinFile').value = '';
-    });
-
-    $('feedKey').value = state.feedKey.toUpperCase();
-
-    $('feedKey').addEventListener('change', event => {
-      const key = event.target.value.trim().toLowerCase();
-
-      if (key.length !== 1 || 'wasd'.includes(key)) {
-        event.target.value = state.feedKey.toUpperCase();
-        return;
-      }
-
-      FeedEngine.stop();
-
-      state.feedKey = key;
-      save('feedKey', key);
-
-      event.target.value = key.toUpperCase();
-    });
-
-    $('feedSpeed').addEventListener('input', event => {
-      state.feedInterval = clamp(
-        event.target.value, 10, 150, 30
-      );
-
-      save('feedInterval', state.feedInterval);
-
-      $('feedValue').textContent =
-        state.feedInterval + ' ms';
-
-      if (state.feeding) {
-        FeedEngine.stop();
-        FeedEngine.start();
-      }
-    });
-
-    $('direction').addEventListener('input', event => {
-      state.directionDistance = clamp(
-        event.target.value, 1000, 30000, 10000
-      );
-
-      save('directionDistance', state.directionDistance);
-
-      $('directionValue').textContent =
-        state.directionDistance.toLocaleString();
-    });
-
-    this.refreshNick();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot, { once: true });
+  } else {
+    boot();
   }
-};
-
-/* INITIALIZATION */
-
-function bootstrap() {
-  NickDetector.start();
-  UI.mount();
-}
-
-SkinEngine.init();
-NameEngine.init();
-KeyboardController.init();
-
-if (document.readyState === 'loading') {
-  document.addEventListener(
-    'DOMContentLoaded',
-    bootstrap,
-    { once: true }
-  );
-} else {
-  bootstrap();
-}
-
 })();
